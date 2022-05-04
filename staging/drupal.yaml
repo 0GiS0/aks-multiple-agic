@@ -1,0 +1,152 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: drupal-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: drupal-pvc-mysql
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drupal-mysql-service
+spec:
+  ports:
+    - name: mysql
+      port: 3306
+      protocol: TCP
+  selector:
+    app: drupal-mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drupal-mysql
+spec:
+  selector:
+    matchLabels:
+      app: drupal-mysql
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: drupal-mysql
+    spec:
+      containers:
+        - env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: root_password
+            - name: MYSQL_DATABASE
+              value: drupal-database
+          image: "mysql:5.7"
+          name: cont-drupal-mysql
+          ports:
+            - containerPort: 3306
+              name: mysql
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/mysql
+              name: vol-drupal
+              subPath: dbdata
+      volumes:
+        - name: vol-drupal
+          persistentVolumeClaim:
+            claimName: drupal-pvc-mysql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drupal-service
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+  selector:
+    app: drupal
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: drupal
+  name: drupal
+spec:
+  selector:
+    matchLabels:
+      app: drupal      
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: drupal
+    spec:
+      initContainers:
+        - name: init-sites-volume
+          image: drupal:8.6
+          command: ["/bin/bash", "-c"]
+          args:
+            [
+              "cp -r /var/www/html/sites/ /data/; chown www-data:www-data /data/ -R",
+            ]
+          volumeMounts:
+            - mountPath: /data
+              name: vol-drupal
+      containers:
+        - image: drupal:8.6
+          name: drupal
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - mountPath: /var/www/html/modules
+              name: vol-drupal
+              subPath: modules
+            - mountPath: /var/www/html/profiles
+              name: vol-drupal
+              subPath: profiles
+            - mountPath: /var/www/html/sites
+              name: vol-drupal
+              subPath: sites
+            - mountPath: /var/www/html/themes
+              name: vol-drupal
+              subPath: themes
+      volumes:
+        - name: vol-drupal
+          persistentVolumeClaim:
+            claimName: drupal-pvc
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: drupal
+  annotations:
+    kubernetes.io/ingress.class: azure/application-gateway-staging
+    appgw.ingress.kubernetes.io/override-frontend-port: "9090"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            backend:
+              service:
+                name: drupal-service
+                port:
+                  number: 80
+            pathType: Exact
