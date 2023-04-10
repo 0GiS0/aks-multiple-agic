@@ -82,6 +82,14 @@ az network public-ip create \
 --allocation-method Static \
 --sku Standard
 
+# Create a WAF policy
+GENERAL_WAF_POLICY="general-waf-policies"
+az network application-gateway waf-policy create \
+--name $GENERAL_WAF_POLICY \
+--resource-group $RESOURCE_GROUP \
+--type OWASP \
+--version 3.2
+
 # Create the app gateway
 az network application-gateway create \
 --resource-group $RESOURCE_GROUP \
@@ -91,7 +99,9 @@ az network application-gateway create \
 --subnet $APPGW_SUBNET \
 --public-ip-address $APP_GW_DEV_NAME-public-ip \
 --sku WAF_v2 \
---capacity 1 
+--capacity 1 \
+--priority 1 \
+--waf-policy $GENERAL_WAF_POLICY 
 
 ######################################
 ######## Configure AGIC for dev ######
@@ -197,7 +207,9 @@ az network application-gateway create \
 --subnet $APPGW_SUBNET \
 --public-ip-address $APP_GW_STAGING_NAME-public-ip \
 --sku WAF_v2 \
---capacity 1 
+--capacity 1 \
+--priority 1 \
+--waf-policy $GENERAL_WAF_POLICY
 
 # Create an identity for the AGIC controller
 az identity create -g $RESOURCE_GROUP -n $APP_GW_STAGING_NAME-identity
